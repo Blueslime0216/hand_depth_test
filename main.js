@@ -12,11 +12,11 @@ import { Application, Assets, Point, MeshRope, Graphics, Sprite, BlurFilter } fr
     });
     document.body.appendChild(app.canvas);
 
-    // 2. 에셋 일괄 로드
+    // 2. 에셋 일괄 로드 (호스팅 환경을 위해 절대 경로 / 로 수정)
     const textures = await Assets.load([
-        { alias: 'bg', src: './bg.png' },
-        { alias: 'arm', src: './arm.png' },
-        { alias: 'hand', src: './hand.png' }
+        { alias: 'bg', src: '/bg.png' },
+        { alias: 'arm', src: '/arm.png' },
+        { alias: 'hand', src: '/hand.png' }
     ]);
 
     // [설정값 및 기능 상수]
@@ -37,7 +37,7 @@ import { Application, Assets, Point, MeshRope, Graphics, Sprite, BlurFilter } fr
      */
     const FOCUS_CONFIG = {
         BG:   { min: 0,  max: 20 },
-        ARM:  { min: 5, mid: 0, max: 10 },
+        ARM:  { min: 5,  mid: 0, max: 10 },
         HAND: { min: 15, max: 0  }
     };
 
@@ -120,8 +120,7 @@ import { Application, Assets, Point, MeshRope, Graphics, Sprite, BlurFilter } fr
         const ratioX = (mouseX - sw / 2) / (sw / 2);
         const ratioY = (mouseY - sh / 2) / (sh / 2);
 
-        // [변경 사항] 초점 변경 조건: 화면 중심 기준 오른쪽 하단 영역 진입 시
-        // sw/2, sh/2 보다 좌표값이 크면(ratioX, ratioY가 0보다 크면) targetFocus를 1로 설정
+        // 초점 변경 조건: 화면 중심 기준 오른쪽 하단 영역(수학적 좌표 x,y 양수) 진입 시
         if (ratioX > 0 && ratioY > 0) {
             targetFocus = 1.0;
         } else {
@@ -146,11 +145,11 @@ import { Application, Assets, Point, MeshRope, Graphics, Sprite, BlurFilter } fr
         // 초점 값 선형 보간 (Lerp)
         currentFocus += (targetFocus - currentFocus) * 0.1;
 
-        // 초점 기반 블러 연동 (BG, HAND)
+        // 초점 기반 블러 연동
         bgBlurFilter.blur = FOCUS_CONFIG.BG.min + (FOCUS_CONFIG.BG.max - FOCUS_CONFIG.BG.min) * currentFocus;
         handBlurFilter.blur = FOCUS_CONFIG.HAND.min + (FOCUS_CONFIG.HAND.max - FOCUS_CONFIG.HAND.min) * currentFocus;
 
-        // ARM 전용 3단계 구간 보간 로직
+        // ARM 3단계 보간
         if (currentFocus <= 0.5) {
             const t = currentFocus / 0.5;
             armBlurFilter.blur = FOCUS_CONFIG.ARM.min + (FOCUS_CONFIG.ARM.mid - FOCUS_CONFIG.ARM.min) * t;
