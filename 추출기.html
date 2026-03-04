@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Ultimate Mesh Weight Editor</title>
+    <style>
+        body { background-color: #121212; color: #ececec; font-family: 'Malgun Gothic', sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; margin: 0; }
+        .toolbar { background: #252525; padding: 15px 20px; border-radius: 10px; display: flex; gap: 15px; align-items: center; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); flex-wrap: wrap; justify-content: center;}
+        .canvas-wrapper { position: relative; border: 2px solid #444; box-shadow: 0 0 20px rgba(0,0,0,0.5); background: #000; overflow: hidden; }
+        canvas { display: block; image-rendering: pixelated; }
+        #paintCanvas { position: absolute; top: 0; left: 0; opacity: 0.6; cursor: crosshair; }
+        button { padding: 8px 16px; cursor: pointer; border: none; border-radius: 6px; background: #3a3a3a; color: white; font-weight: bold; transition: all 0.2s; }
+        button:hover { background: #555; }
+        button.primary { background: #1e88e5; }
+        button.primary:hover { background: #1565c0; }
+        button.success { background: #43a047; }
+        button.success:hover { background: #2e7d32; }
+        .color-group { display: flex; gap: 10px; align-items: center; padding: 0 15px; border-left: 1px solid #555; border-right: 1px solid #555; }
+        .color-btn { width: 32px; height: 32px; border: 2px solid #fff; border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
+        .color-btn.active { outline: 3px solid #1e88e5; outline-offset: 3px; transform: scale(1.1); }
+        .status-info { margin-top: 10px; font-size: 14px; color: #aaa; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <div>
+            <label style="display:block; font-size:12px; margin-bottom:5px;">1. 이미지 로드</label>
+            <input type="file" id="imageLoader" accept="image/*">
+        </div>
+
+        <div class="color-group">
+            <button class="color-btn active" style="background: black;" data-color="#000000" title="고정 (Black)"></button>
+            <button class="color-btn" style="background: lime;" data-color="#00FF00" title="늘어남 (Green)"></button>
+            <button class="color-btn" style="background: red;" data-color="#FF0000" title="이동 (Red)"></button>
+            <div style="display:flex; flex-direction:column; align-items:center;">
+                <label style="font-size:10px;">브러시: <span id="brushSizeVal">50</span>px</label>
+                <input type="range" id="brushSize" min="10" max="150" value="50">
+            </div>
+        </div>
+
+        <button id="saveMapBtn">작업 맵 저장(PNG)</button>
+        <button id="loadMapBtn">작업 맵 로드(PNG)</button>
+        <input type="file" id="mapLoader" accept="image/png" style="display: none;">
+        
+        <button class="primary" id="previewBtn">가중치 점검 (Heatmap)</button>
+        <button class="success" id="exportBtn">완벽한 JSON 내보내기</button>
+    </div>
+    
+    <div class="canvas-wrapper" id="wrapper">
+        <canvas id="bgCanvas"></canvas>
+        <canvas id="paintCanvas"></canvas>
+    </div>
+    
+    <div class="status-info" id="status">
+        1. 이미지를 업로드하세요.<br>
+        2. 뿌리는 검은색, 끝은 빨간색으로 칠하고 연두색으로 채워주세요.
+    </div>
+
+    <script>
+        const imageLoader = document.getElementById('imageLoader');
+        const mapLoader = document.getElementById('mapLoader');
+        const bgCanvas = document.getElementById('bgCanvas');
+        const paintCanvas = document.getElementById('paintCanvas');
+        const bgCtx = bgCanvas.getContext('2d');
+        const paintCtx = paintCanvas.getContext('2d', { willReadFrequently: true });
+        const status = document.getElementById('status');
+        
+        let currentColor = '#000000';
+        let brushSize = 50;
+        let isDrawing = false;
+
+        // 색상 선택 로직
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentColor = btn.dataset.color;
+            });
+        });
+
+        const brushSizeSlider = document.getElementById('brushSize');
+        const brushSizeVal = document.getElementById('brushSizeVal');
+        brushSizeSlider.oninput = (e) => {
+            brushSize = e.target.value;
+            brushSizeVal.innerText = brushSize;
+        };
+
+        // 이미지 로드
+        imageLoader.onchange = (e) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const img = new Image();
+                img.onload = () => {
+                    bgCanvas.width = paintCanvas.width = img.width;
+                    bgCanvas.height = paintCanvas.height = img.height;
+                    bgCtx.drawImage(img, 0, 0);
+                    paintCtx.clearRect(0, 0, img.width, img.height);
+                    status.innerHTML = `<span style="color:#4caf50;">이미지 로드 완료: ${img.width}x${img.height}</span>`;
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(e.target.files[0]);
+        };
+
+        // 가중치 맵 저장/로드
+        document.getElementById('saveMapBtn').onclick = () => {
+            if(paintCanvas.width === 0) return alert("저장할 내용이 없습니다.");
+            const a = document.createElement('a');
+            a.download = 'arm_weight_map.png';
+            a.href = paintCanvas.toDataURL();
+            a.click();
+        };
+
+        document.getElementById('loadMapBtn').onclick = () => mapLoader.click();
+        mapLoader.onchange = (e) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const img = new Image();
+                img.onload = () => {
+                    if (img.width !== paintCanvas.width || img.height !== paintCanvas.height) {
+                        alert("현재 이미지 크기와 맞지 않습니다. 원본 이미지를 먼저 업로드했는지 확인하세요.");
+                        return;
+                    }
+                    paintCtx.clearRect(0, 0, paintCanvas.width, paintCanvas.height);
+                    paintCtx.drawImage(img, 0, 0);
+                    status.innerHTML = `<span style="color:#2196f3;">가중치 맵 로드 완료!</span>`;
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(e.target.files[0]);
+        };
+
+        // 그리기 (부드러운 브러시)
+        const getPos = (e) => {
+            const rect = paintCanvas.getBoundingClientRect();
+            // 캔버스 스케일링 보정
+            const scaleX = paintCanvas.width / rect.width;
+            const scaleY = paintCanvas.height / rect.height;
+            return { 
+                x: (e.clientX - rect.left) * scaleX, 
+                y: (e.clientY - rect.top) * scaleY 
+            };
+        };
+
+        paintCanvas.onmousedown = (e) => { isDrawing = true; draw(e); };
+        paintCanvas.onmousemove = (e) => { if(isDrawing) draw(e); };
+        window.onmouseup = () => isDrawing = false;
+
+        function draw(e) {
+            if (!isDrawing) return;
+            const pos = getPos(e);
+            paintCtx.fillStyle = currentColor;
+            paintCtx.beginPath();
+            paintCtx.arc(pos.x, pos.y, brushSize / 2, 0, Math.PI * 2);
+            paintCtx.fill();
+        }
+
+        // 핵심: 메쉬 생성 로직
+        function generateMesh(isPreview = false) {
+            const w = paintCanvas.width;
+            const h = paintCanvas.height;
+            if (w === 0 || h === 0) return alert("이미지가 로드되지 않았습니다.");
+
+            const imgData = paintCtx.getImageData(0, 0, w, h).data;
+            const blackPts = [], redPts = [];
+            
+            // 1. 기준점 수집 (최적화: 2픽셀 단위 검사로 속도 향상 및 얇은 선 방어)
+            for (let y = 0; y < h; y += 2) {
+                for (let x = 0; x < w; x += 2) {
+                    const idx = (y * w + x) * 4;
+                    if (imgData[idx+3] < 10) continue; 
+                    
+                    const r = imgData[idx], g = imgData[idx+1], b = imgData[idx+2];
+                    if (r < 50 && g < 50 && b < 50) blackPts.push({x, y});
+                    else if (r > 200 && g < 50 && b < 50) redPts.push({x, y});
+                }
+            }
+
+            if (blackPts.length === 0 || redPts.length === 0) {
+                return alert("검은색(고정)과 빨간색(이동)이 모두 있어야 합니다!");
+            }
+
+            // 2. 메쉬 세팅 (해상도를 40x40으로 고정하여 안정성 및 성능 최적화)
+            const segX = 40, segY = 40;
+            const vertices = [], uvs = [], weights = [], indices = [];
+
+            // 3. 정점, UV, 가중치 계산
+            for (let i = 0; i <= segY; i++) {
+                for (let j = 0; j <= segX; j++) {
+                    const vx = (j / segX) * w;
+                    const vy = (i / segY) * h;
+                    
+                    // 소수점 4자리로 정리 (데이터 클리닝)
+                    vertices.push(Number(vx.toFixed(4)), Number(vy.toFixed(4)));
+                    uvs.push(Number((j / segX).toFixed(4)), Number((i / segY).toFixed(4)));
+
+                    // 최단 거리 구하기 로직 (유클리드 거리)
+                    const getDist = (px, py, list) => {
+                        let minD = Infinity;
+                        // 포인트가 너무 많으면 랙이 걸리므로 샘플링
+                        const step = Math.max(1, Math.floor(list.length / 500));
+                        for(let k=0; k<list.length; k+=step) {
+                            const d = Math.hypot(list[k].x - px, list[k].y - py);
+                            if(d < minD) minD = d;
+                        }
+                        return minD;
+                    };
+
+                    const dB = getDist(vx, vy, blackPts);
+                    const dR = getDist(vx, vy, redPts);
+                    
+                    // 가중치 (dB가 작을수록 0에 가깝고, dR이 작을수록 1에 가까움)
+                    // Math.max를 써서 분모가 0이 되는(NaN) 치명적 에러 방어
+                    let weight = dB / Math.max(dB + dR, 0.0001);
+                    if (isNaN(weight) || weight < 0) weight = 0;
+                    if (weight > 1) weight = 1;
+                    
+                    weights.push(Number(weight.toFixed(4)));
+
+                    if (isPreview) {
+                        paintCtx.fillStyle = `rgb(${weight*255}, 0, ${(1-weight)*255})`;
+                        paintCtx.fillRect(vx-2, vy-2, 4, 4);
+                    }
+                }
+            }
+
+            if (isPreview) {
+                status.innerHTML = `<span style="color:#ff9800;">가중치 점검 모드입니다. 붉은색이 이동, 푸른색이 고정입니다.</span>`;
+                return;
+            }
+
+            // 4. 완벽한 삼각형 인덱스 생성 (찢어짐 해결의 핵심)
+            // 왼쪽 상단부터 오른쪽 하단 방향으로 2개의 삼각형을 확실하게 정의합니다.
+            for (let i = 0; i < segY; i++) {
+                for (let j = 0; j < segX; j++) {
+                    const tl = i * (segX + 1) + j;      // Top-Left
+                    const tr = tl + 1;                  // Top-Right
+                    const bl = (i + 1) * (segX + 1) + j;// Bottom-Left
+                    const br = bl + 1;                  // Bottom-Right
+                    
+                    // 첫 번째 삼각형 (TL, TR, BR)
+                    indices.push(tl, tr, br);
+                    // 두 번째 삼각형 (TL, BR, BL)
+                    indices.push(tl, br, bl);
+                }
+            }
+
+            // 5. JSON 다운로드
+            const data = { width: w, height: h, vertices, uvs, indices, weights };
+            const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'mesh_data.json';
+            a.click();
+            status.innerHTML = `<span style="color:#4caf50;">JSON 내보내기 성공! 이제 main.js에서 확인하세요.</span>`;
+        }
+
+        document.getElementById('previewBtn').onclick = () => generateMesh(true);
+        document.getElementById('exportBtn').onclick = () => generateMesh(false);
+
+    </script>
+</body>
+</html>
