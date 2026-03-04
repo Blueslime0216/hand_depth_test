@@ -1,0 +1,47 @@
+# 의존성 (Dependencies)
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# 로그 (Logs)
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 에디터 및 OS (Editor / OS)
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 환경 변수 (Environment Variables)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 테스트 (Test)
+/coverage
+
+# 임시 파일 및 캐시 (Temp / Cache)
+.parcel-cache
+.cache
+.eslintcache
+.stylelintcache
+.vite
+.pnpm-debug.log*
+
+# 프로젝트 특성 파일 (Project Specific)
+# 만약 에셋 원본이나 대용량 바이너리 파일을 제외하고 싶다면 아래에 추가하세요.
+# *.psd
+# *.aseprite
